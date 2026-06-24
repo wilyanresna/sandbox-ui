@@ -11,7 +11,7 @@ interface ProjectState {
   fetchColorPacks: () => Promise<void>;
   createProject: (name: string, colorPackId: string) => Promise<Project | null>;
   deleteProject: (id: string) => Promise<boolean>;
-  selectProject: (project: Project | null) => void;
+  selectProject: (project: Project | null) => Promise<void>;
   createColorPack: (name: string) => Promise<ColorPack | null>;
   updateColorPack: (id: string, name: string, tokens: ColorToken[]) => Promise<ColorPack | null>;
   deleteColorPack: (id: string) => Promise<{ success: boolean; error?: string }>;
@@ -215,8 +215,43 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
-  selectProject: (project: Project | null) => {
-    set({ activeProject: project });
+  selectProject: async (project: Project | null) => {
+    if (!project) {
+      set({ activeProject: null });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/projects/${project.id}`).catch(() => null);
+      if (res && res.ok) {
+        const data = await res.json();
+        let canvasState = data.canvas_state;
+        if (typeof canvasState === 'string') {
+          try {
+            canvasState = JSON.parse(canvasState);
+          } catch (e) {
+            canvasState = [];
+          }
+        }
+        const fullProj: Project = {
+          ...data,
+          canvas_state: canvasState || [],
+          color_pack: data.color_pack ? {
+            id: data.color_pack.id,
+            name: data.color_pack.name,
+            tokens: (data.color_pack.tokens || []).map((tok: any) => ({
+              name: tok.name,
+              lightHex: tok.light_hex || tok.lightHex,
+              darkHex: tok.dark_hex || tok.darkHex,
+            }))
+          } : undefined
+        };
+        set({ activeProject: fullProj });
+      } else {
+        set({ activeProject: project });
+      }
+    } catch (err) {
+      set({ activeProject: project });
+    }
   },
 
   createColorPack: async (name: string) => {

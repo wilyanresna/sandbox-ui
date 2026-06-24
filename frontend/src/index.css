@@ -665,20 +665,7 @@ body {
   background-color: #121212;
 }
 
-.konva-stage-element {
-  width: 100% !important;
-  height: 100% !important;
-}
 
-.konva-stage-element > div {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.konva-stage-element canvas {
-  width: 100% !important;
-  height: 100% !important;
-}
 
 /* Properties Form Styling */
 .properties-form {

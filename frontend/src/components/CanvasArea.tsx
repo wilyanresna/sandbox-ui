@@ -85,12 +85,13 @@ export const CanvasArea: React.FC = () => {
     <div className="canvas-container">
       <div className="canvas-wrapper">
         <Stage
-          width={1200}
-          height={1200}
+          width={600}
+          height={600}
+          scaleX={0.5}
+          scaleY={0.5}
           ref={stageRef}
           onClick={handleStageClick}
           className="konva-stage-element"
-          style={{ width: '100%', height: '100%', aspectRatio: '1/1' }}
         >
           <Layer>
             {/* Canvas Base Background */}
