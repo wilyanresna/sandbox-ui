@@ -4,7 +4,7 @@ import { useCanvasStore } from '../stores/useCanvasStore';
 
 export const Navbar: React.FC = () => {
   const { activeProject, selectProject, colorPacks } = useProjectStore();
-  const { themeMode, setThemeMode, isDirty, saveState } = useCanvasStore();
+  const { themeMode, setThemeMode, isDirty, isSaving, saveState } = useCanvasStore();
 
   const handleBack = () => {
     if (isDirty && !confirm('You have unsaved changes. Are you sure you want to go back?')) {
@@ -75,7 +75,9 @@ export const Navbar: React.FC = () => {
           ← Dashboard
         </button>
         <span className="project-title">{activeProject?.name}</span>
-        {isDirty ? (
+        {isSaving ? (
+          <span className="badge" style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-color)' }}>Saving...</span>
+        ) : isDirty ? (
           <span className="badge badge-warning">Unsaved Changes</span>
         ) : (
           <span className="badge badge-success">Saved</span>

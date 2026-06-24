@@ -7,6 +7,7 @@ interface CanvasState {
   themeMode: 'light' | 'dark';
   colorPackId: string;
   isDirty: boolean;
+  isSaving: boolean;
 
   loadCanvasState: (components: CanvasComponent[], colorPackId: string) => void;
   setColorPackId: (colorPackId: string) => void;
@@ -24,6 +25,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   themeMode: 'light',
   colorPackId: '',
   isDirty: false,
+  isSaving: false,
 
   loadCanvasState: (components, colorPackId) => {
     // Sort components by zIndex initially just in case
@@ -122,6 +124,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   saveState: async (projectId) => {
     const { components, colorPackId } = get();
+    set({ isSaving: true });
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
         method: 'PUT',
@@ -133,16 +136,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }).catch(() => null);
 
       if (res && res.ok) {
-        set({ isDirty: false });
+        set({ isDirty: false, isSaving: false });
         return true;
       } else {
         // Fallback for local preview running mode
         console.log('Saved project offline:', { projectId, colorPackId, components });
-        set({ isDirty: false });
+        set({ isDirty: false, isSaving: false });
         return true;
       }
     } catch (err) {
       console.error('Failed to save project state:', err);
+      set({ isSaving: false });
       return false;
     }
   },

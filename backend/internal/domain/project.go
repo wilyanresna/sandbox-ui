@@ -11,11 +11,11 @@ import (
 type Project struct {
 	ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	Name        string    `gorm:"type:varchar(255);not null" json:"name"`
-	ColorPackID uuid.UUID `gorm:"type:uuid;not null" json:"color_pack_id"`
+	ColorPackID uuid.UUID `gorm:"type:uuid;not null;index:idx_projects_color_pack_id" json:"color_pack_id"`
 	ColorPack   ColorPack `gorm:"foreignKey:ColorPackID;constraint:OnDelete:RESTRICT" json:"color_pack,omitempty"`
 	CanvasState string    `gorm:"type:jsonb;not null;default:'[]'" json:"canvas_state"`
 	CreatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
+	UpdatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP;index:idx_projects_updated_at,sort:desc" json:"updated_at"`
 }
 
 // ProjectRepository defines GORM querying interfaces

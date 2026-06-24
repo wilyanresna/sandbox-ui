@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../stores/useProjectStore';
 import { type Project } from '../types';
+import { ColorPackManagerModal } from './ColorPackManagerModal';
 
 export const Dashboard: React.FC = () => {
   const {
@@ -15,6 +16,7 @@ export const Dashboard: React.FC = () => {
   } = useProjectStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCpModalOpen, setIsCpModalOpen] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [selectedPackId, setSelectedPackId] = useState('');
 
@@ -49,9 +51,14 @@ export const Dashboard: React.FC = () => {
           <div className="logo-icon"></div>
           <h1>Canvas UI & Color Manager</h1>
         </div>
-        <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
-          + Create Project
-        </button>
+        <div className="header-actions" style={{ display: 'flex', gap: '12px' }}>
+          <button className="btn btn-secondary" onClick={() => setIsCpModalOpen(true)}>
+            🎨 Manage Color Packs
+          </button>
+          <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
+            + Create Project
+          </button>
+        </div>
       </header>
 
       <main className="dashboard-main">
@@ -62,9 +69,14 @@ export const Dashboard: React.FC = () => {
           ) : projects.length === 0 ? (
             <div className="empty-state">
               <p>No projects found. Create one to get started!</p>
-              <button className="btn btn-secondary" onClick={() => setIsModalOpen(true)}>
-                New Project
-              </button>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button className="btn btn-secondary" onClick={() => setIsCpModalOpen(true)}>
+                  Manage Color Packs
+                </button>
+                <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
+                  New Project
+                </button>
+              </div>
             </div>
           ) : (
             <div className="projects-grid">
@@ -157,6 +169,8 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ColorPackManagerModal isOpen={isCpModalOpen} onClose={() => setIsCpModalOpen(false)} />
     </div>
   );
 };
