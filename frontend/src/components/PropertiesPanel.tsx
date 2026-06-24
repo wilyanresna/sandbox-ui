@@ -9,9 +9,10 @@ export const PropertiesPanel: React.FC = () => {
 
   const selectedComponent = components.find((c) => c.id === selectedId);
 
-  // Find active color pack to populate token options
   const activeColorPack = colorPacks.find((p) => p.id === colorPackId);
-  const colorTokens = activeColorPack ? activeColorPack.tokens : [];
+  const colorTokens = activeColorPack
+    ? [...activeColorPack.tokens].sort((a, b) => a.name.localeCompare(b.name))
+    : [];
 
   const handleAddRectangle = () => {
     const newRect: ShapeComponent = {
