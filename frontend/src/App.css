@@ -1,0 +1,7 @@
+/* Custom overrides for App root wrapper */
+.app-root {
+  width: 100vw;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
