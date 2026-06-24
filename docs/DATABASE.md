@@ -1,20 +1,20 @@
 # Database Schema & Design Document
 ## Canvas UI & Color Manager
 
-Dokumen ini mendefinisikan desain database relasional menggunakan **PostgreSQL** dan **GORM** (Go ORM). Dokumen ini telah diperbarui untuk menerapkan **Snapshot Color Pack Strategy** guna mendukung independensi skema warna pada setiap project.
+Dokumen ini mendefinisikan desain database relasional menggunakan **PostgreSQL** dan **GORM** (Go ORM). Dokumen ini telah disesuaikan dengan **Shared Color Pack Strategy** di mana Color Pack diposisikan sebagai entitas independen global yang digunakan bersama oleh banyak project secara langsung tanpa mekanisme snapshot.
 
 ---
 
 ### 1. Rationale & Alasan Desain
 
-Untuk memfasilitasi kebutuhan bisnis di mana setiap project harus memiliki kontrol warna secara mandiri tanpa memengaruhi project lain atau template global, basis data dirancang dengan pemisahan entitas berikut:
+Untuk memfasilitasi kebutuhan bisnis di mana satu Color Pack digunakan secara langsung oleh banyak project dan perubahan di dalamnya berdampak langsung ke semua project, basis data dirancang dengan pemisahan entitas berikut:
 
-* **Color Pack Template**:
-  Direpresentasikan oleh tabel `color_pack_templates` dan `color_template_tokens`. Entitas ini berfungsi sebagai pustaka palet warna global/standar yang dapat dipilih oleh pengguna saat membuat project baru.
-* **Project Theme Snapshot**:
-  Direpresentasikan oleh tabel `project_color_tokens`. Ketika sebuah project dibuat, sistem menduplikasi seluruh data warna dari template terpilih ke tabel ini. Hubungan warna visual pada komponen kanvas diikat langsung ke tabel snapshot lokal ini.
-* **Isolasi Relasi**:
-  Relasi foreign key dari tabel `projects` ke `color_pack_templates` diatur menggunakan `ON DELETE SET NULL` dan bersifat opsional (nullable). Dengan demikian, jika sebuah template dihapus dari sistem, project yang sudah ada tetap aman dan tidak kehilangan datanya karena ia memegang salinan warna sendiri secara lokal.
+* **Color Pack (Global & Shared)**:
+  Direpresentasikan oleh tabel `color_packs` dan `color_tokens`. Entitas ini menyimpan definisi palet warna Material 3 global. Perubahan pada nilai warna token di tabel `color_tokens` akan langsung merefleksikan perubahan warna pada project mana pun yang menggunakannya saat di-render.
+* **Project Reference**:
+  Tabel `projects` memiliki kolom `color_pack_id` yang terhubung langsung ke `color_packs.id`. Tidak ada penyimpanan data warna lokal di dalam project.
+* **Aturan Relasi Terikat (RESTRICT)**:
+  Tabel `projects` mengikat `color_pack_id` dengan aturan `ON DELETE RESTRICT`. Hal ini menjamin integritas referensial data di mana user tidak diperbolehkan menghapus suatu Color Pack jika masih dirujuk oleh minimal satu project aktif.
 
 ---
 
@@ -22,16 +22,16 @@ Untuk memfasilitasi kebutuhan bisnis di mana setiap project harus memiliki kontr
 
 ```mermaid
 erDiagram
-    COLOR_PACK_TEMPLATES {
+    COLOR_PACKS {
         uuid id PK
         varchar name
         timestamp created_at
         timestamp updated_at
     }
     
-    COLOR_TEMPLATE_TOKENS {
+    COLOR_TOKENS {
         uuid id PK
-        uuid color_pack_template_id FK
+        uuid color_pack_id FK
         varchar name
         varchar light_hex
         varchar dark_hex
@@ -42,25 +42,14 @@ erDiagram
     PROJECTS {
         uuid id PK
         varchar name
-        uuid color_pack_template_id FK "nullable"
+        uuid color_pack_id FK
         jsonb canvas_state
         timestamp created_at
         timestamp updated_at
     }
-    
-    PROJECT_COLOR_TOKENS {
-        uuid id PK
-        uuid project_id FK
-        varchar name
-        varchar light_hex
-        varchar dark_hex
-        timestamp created_at
-        timestamp updated_at
-    }
 
-    COLOR_PACK_TEMPLATES ||--o{ COLOR_TEMPLATE_TOKENS : "has many (CASCADE)"
-    COLOR_PACK_TEMPLATES ||--o{ PROJECTS : "templated in (SET NULL)"
-    PROJECTS ||--o{ PROJECT_COLOR_TOKENS : "has local snapshot (CASCADE)"
+    COLOR_PACKS ||--o{ COLOR_TOKENS : "has many (CASCADE)"
+    COLOR_PACKS ||--o{ PROJECTS : "reused in (RESTRICT)"
 ```
 
 ---
@@ -73,18 +62,18 @@ Berikut adalah perintah SQL DDL untuk inisiasi skema database di PostgreSQL:
 -- Mengaktifkan ekstensi UUID generator
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. Tabel Color Pack Templates (Global Blueprint)
-CREATE TABLE color_pack_templates (
+-- 1. Tabel Color Packs (Global Shared)
+CREATE TABLE color_packs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
--- 2. Tabel Color Template Tokens (Global Blueprint Tokens)
-CREATE TABLE color_template_tokens (
+-- 2. Tabel Color Tokens (Shared M3 Tokens)
+CREATE TABLE color_tokens (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    color_pack_template_id UUID NOT NULL,
+    color_pack_id UUID NOT NULL,
     name VARCHAR(100) NOT NULL,
     light_hex VARCHAR(9) NOT NULL, -- Mendukung #RRGGBB dan #AARRGGBB
     dark_hex VARCHAR(9) NOT NULL,  -- Mendukung #RRGGBB dan #AARRGGBB
@@ -92,51 +81,30 @@ CREATE TABLE color_template_tokens (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     
     -- Constraint Relasi
-    CONSTRAINT fk_template 
-        FOREIGN KEY(color_pack_template_id) 
-        REFERENCES color_pack_templates(id) 
+    CONSTRAINT fk_color_pack 
+        FOREIGN KEY(color_pack_id) 
+        REFERENCES color_packs(id) 
         ON DELETE CASCADE,
         
-    -- Mencegah nama token ganda di dalam satu template
-    CONSTRAINT uq_template_token 
-        UNIQUE(color_pack_template_id, name)
+    -- Mencegah nama token ganda di dalam satu Color Pack
+    CONSTRAINT uq_pack_token_name 
+        UNIQUE(color_pack_id, name)
 );
 
 -- 3. Tabel Projects
 CREATE TABLE projects (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
-    color_pack_template_id UUID, -- Nullable (Audit reference ke template global asal)
+    color_pack_id UUID NOT NULL,
     canvas_state JSONB NOT NULL DEFAULT '[]'::jsonb, -- Menyimpan array komponen kanvas
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     
-    -- Constraint Relasi (Set NULL jika template aslinya dihapus)
-    CONSTRAINT fk_project_template 
-        FOREIGN KEY(color_pack_template_id) 
-        REFERENCES color_pack_templates(id) 
-        ON DELETE SET NULL
-);
-
--- 4. Tabel Project Color Tokens (Project Theme Snapshot Lokal)
-CREATE TABLE project_color_tokens (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    project_id UUID NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    light_hex VARCHAR(9) NOT NULL,
-    dark_hex VARCHAR(9) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    
-    -- Constraint Relasi (Hapus otomatis jika project dihapus)
-    CONSTRAINT fk_project_tokens 
-        FOREIGN KEY(project_id) 
-        REFERENCES projects(id) 
-        ON DELETE CASCADE,
-        
-    -- Mencegah nama token ganda dalam satu project
-    CONSTRAINT uq_project_token 
-        UNIQUE(project_id, name)
+    -- Constraint Relasi (Mencegah penghapusan Color Pack jika masih digunakan oleh project)
+    CONSTRAINT fk_project_color_pack 
+        FOREIGN KEY(color_pack_id) 
+        REFERENCES color_packs(id) 
+        ON DELETE RESTRICT
 );
 ```
 
@@ -155,46 +123,35 @@ import (
 	"github.com/google/uuid"
 )
 
-// ColorPackTemplate merepresentasikan blueprint/template palet warna global
-type ColorPackTemplate struct {
-	ID        uuid.UUID            `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	Name      string               `gorm:"type:varchar(255);not null" json:"name"`
-	Tokens    []ColorTemplateToken `gorm:"foreignKey:ColorPackTemplateID;constraint:OnDelete:CASCADE" json:"tokens,omitempty"`
-	CreatedAt time.Time            `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt time.Time            `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
+// ColorPack merepresentasikan kumpulan token warna Material 3 global
+type ColorPack struct {
+	ID        uuid.UUID    `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Name      string       `gorm:"type:varchar(255);not null" json:"name"`
+	Tokens    []ColorToken `gorm:"foreignKey:ColorPackID;constraint:OnDelete:CASCADE" json:"tokens,omitempty"`
+	CreatedAt time.Time    `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt time.Time    `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
-// ColorTemplateToken menyimpan token warna global untuk template
-type ColorTemplateToken struct {
-	ID                  uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	ColorPackTemplateID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_template_token" json:"color_pack_template_id"`
-	Name                string    `gorm:"type:varchar(100);not null;uniqueIndex:idx_template_token" json:"name"`
-	LightHex            string    `gorm:"type:varchar(9);not null" json:"light_hex"`
-	DarkHex             string    `gorm:"type:varchar(9);not null" json:"dark_hex"`
-	CreatedAt           time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"-"`
-	UpdatedAt           time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"-"`
+// ColorToken menyimpan pasangan warna Light & Dark mode untuk token M3 global
+type ColorToken struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ColorPackID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_pack_token" json:"color_pack_id"`
+	Name        string    `gorm:"type:varchar(100);not null;uniqueIndex:idx_pack_token" json:"name"`
+	LightHex    string    `gorm:"type:varchar(9);not null" json:"light_hex"`
+	DarkHex     string    `gorm:"type:varchar(9);not null" json:"dark_hex"`
+	CreatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"-"`
+	UpdatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"-"`
 }
 
-// Project menyimpan konfigurasi kanvas dan memegang snapshot warna lokal
+// Project menyimpan konfigurasi kanvas beserta referensi Color Pack global
 type Project struct {
-	ID                  uuid.UUID           `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	Name                string              `gorm:"type:varchar(255);not null" json:"name"`
-	ColorPackTemplateID *uuid.UUID          `gorm:"type:uuid" json:"color_pack_template_id"` // Nullable
-	CanvasState         string              `gorm:"type:jsonb;not null;default:'[]'" json:"canvas_state"`
-	ColorTokens         []ProjectColorToken `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE" json:"color_tokens,omitempty"`
-	CreatedAt           time.Time           `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt           time.Time           `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
-}
-
-// ProjectColorToken menyimpan token warna lokal milik Project tertentu (Snapshot)
-type ProjectColorToken struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	ProjectID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_project_token" json:"project_id"`
-	Name      string    `gorm:"type:varchar(100);not null;uniqueIndex:idx_project_token" json:"name"`
-	LightHex  string    `gorm:"type:varchar(9);not null" json:"light_hex"`
-	DarkHex   string    `gorm:"type:varchar(9);not null" json:"dark_hex"`
-	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"-"`
-	UpdatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"-"`
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Name        string    `gorm:"type:varchar(255);not null" json:"name"`
+	ColorPackID uuid.UUID `gorm:"type:uuid;not null" json:"color_pack_id"`
+	ColorPack   ColorPack `gorm:"foreignKey:ColorPackID;constraint:OnDelete:RESTRICT" json:"color_pack,omitempty"`
+	CanvasState string    `gorm:"type:jsonb;not null;default:'[]'" json:"canvas_state"`
+	CreatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 ```
 
@@ -204,40 +161,32 @@ type ProjectColorToken struct {
 
 | Tabel | Nama Field | Tipe Data | Deskripsi | Constraints |
 | :--- | :--- | :--- | :--- | :--- |
-| **`color_pack_templates`** | `id` | UUID | Identifier unik template global | Primary Key, Default UUID v4 |
-| | `name` | VARCHAR | Nama template warna global | Not Null |
+| **`color_packs`** | `id` | UUID | Identifier unik Color Pack | Primary Key, Default UUID v4 |
+| | `name` | VARCHAR | Nama Color Pack | Not Null |
 | | `created_at` | TIMESTAMPTZ | Waktu data dibuat | Not Null, Default Now() |
 | | `updated_at` | TIMESTAMPTZ | Waktu data diupdate | Not Null, Default Now() |
-| **`color_template_tokens`** | `id` | UUID | Identifier unik token template | Primary Key, Default UUID v4 |
-| | `color_pack_template_id` | UUID | Referensi ID template global | FK, Not Null, Cascade Delete |
-| | `name` | VARCHAR | Nama token warna M3 (e.g. `primary`) | Not Null, Unique per Template |
+| **`color_tokens`** | `id` | UUID | Identifier unik token | Primary Key, Default UUID v4 |
+| | `color_pack_id` | UUID | Referensi ID Color Pack penampung | FK, Not Null, Cascade Delete |
+| | `name` | VARCHAR | Nama token warna M3 (e.g. `primary`) | Not Null, Unique per Pack |
 | | `light_hex` | VARCHAR(9) | Kode warna Hex Light Mode | Not Null |
 | | `dark_hex` | VARCHAR(9) | Kode warna Hex Dark Mode | Not Null |
 | **`projects`** | `id` | UUID | Identifier unik Project | Primary Key, Default UUID v4 |
 | | `name` | VARCHAR | Nama Project | Not Null |
-| | `color_pack_template_id` | UUID | Referensi ke template asal | FK, Nullable, On Delete Set Null |
+| | `color_pack_id` | UUID | Referensi ke Color Pack yang aktif | FK, Not Null, On Delete Restrict |
 | | `canvas_state` | JSONB | Data koordinat & properti layer kanvas | Not Null, Default '[]' |
-| **`project_color_tokens`** | `id` | UUID | Identifier unik token snapshot project | Primary Key, Default UUID v4 |
-| | `project_id` | UUID | Referensi ID Project pemilik snapshot | FK, Not Null, Cascade Delete |
-| | `name` | VARCHAR | Nama token warna M3 | Not Null, Unique per Project |
-| | `light_hex` | VARCHAR(9) | Kode warna Hex Light Mode lokal | Not Null |
-| | `dark_hex` | VARCHAR(9) | Kode warna Hex Dark Mode lokal | Not Null |
 
 ---
 
 ### 6. Index Recommendations
 
-Penyusunan indeks untuk performa baca/tulis aplikasi kanvas:
+Penyusunan indeks untuk performa query aplikasi kanvas:
 
-1. **`idx_template_token` (Unique Index)**:
-   - *Kolom*: `(color_pack_template_id, name)`
-   - *Alasan*: Menjamin keunikan nama token per template global serta mempercepat lookup saat penyalinan token.
-2. **`idx_project_token` (Unique Index)**:
-   - *Kolom*: `(project_id, name)`
-   - *Alasan*: Menjamin keunikan nama token per project agar rendering warna kanvas melalui join cepat dan tidak terjadi tumpang tindih data.
-3. **`idx_projects_template_id` (B-Tree Index)**:
-   - *Kolom*: `color_pack_template_id`
-   - *Alasan*: Mengurangi overhead pemeriksaan foreign key `SET NULL` saat melakukan penghapusan template global.
-4. **`idx_projects_updated_at` (B-Tree Index)**:
+1. **`idx_pack_token` (Unique Index)**:
+   - *Kolom*: `(color_pack_id, name)`
+   - *Alasan*: Menjamin keunikan nama token per Color Pack serta mempercepat lookup pencarian warna saat rendering kanvas.
+2. **`idx_projects_color_pack_id` (B-Tree Index)**:
+   - *Kolom*: `color_pack_id`
+   - *Alasan*: Mengurangi overhead pemeriksaan foreign key `RESTRICT` saat melakukan penghapusan Color Pack.
+3. **`idx_projects_updated_at` (B-Tree Index)**:
    - *Kolom*: `updated_at DESC`
    - *Alasan*: Mempercepat sorting project terbaru di Dashboard.

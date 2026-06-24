@@ -1,7 +1,7 @@
 # Architecture Document
 ## Canvas UI & Color Manager
 
-Dokumen ini menjelaskan arsitektur sistem untuk aplikasi **Canvas UI & Color Manager**, mencakup arsitektur frontend, arsitektur backend, manajemen state, desain API, serta mekanisme ekspor PNG dan Kotlin.
+Dokumen ini menjelaskan arsitektur sistem untuk aplikasi **Canvas UI & Color Manager**, mencakup arsitektur frontend, arsitektur backend, manajemen state, desain API, serta mekanisme ekspor PNG dan Kotlin. Dokumen ini disesuaikan dengan **Shared Color Pack Strategy** di mana data warna dikelola secara terpusat pada entitas Color Pack global.
 
 ---
 
@@ -32,7 +32,7 @@ graph TD
 * **Navbar**: Menu atas editor yang berisi informasi project, tombol "Back to Dashboard", toggle Light/Dark Mode, tombol simpan manual, dan drop-down/tombol Export (PNG & Kotlin).
 * **Layer Panel (Left Sidebar)**: Panel yang menampilkan urutan komponen di kanvas dari atas ke bawah (berdasarkan z-index). Menyediakan aksi rename layer dan tombol untuk menata urutan layer (*Bring to Front*, *Bring Forward*, *Send Backward*, *Send To Back*).
 * **Canvas Area (Center)**: Area visual interaktif tempat `react-konva` merender komponen. Menangani interaksi mouse seperti *click-to-select* dan *drag-and-drop* untuk memindahkan posisi komponen.
-* **Properties Panel (Right Sidebar)**: Form dinamis untuk mengedit properti komponen yang sedang dipilih. Menggunakan drop-down berisi token warna dari Color Pack yang aktif (bukan input kode Hex langsung).
+* **Properties Panel (Right Sidebar)**: Form dinamis untuk mengedit properti komponen yang sedang dipilih. Menggunakan drop-down berisi token warna dari Color Pack yang aktif terikat (bukan input kode Hex langsung).
 
 ---
 
@@ -165,15 +165,17 @@ Zustand dibagi menjadi dua store utama:
      - `components`: Array dari `CanvasComponent`.
      - `selectedId`: String dari ID komponen yang aktif dipilih (null jika tidak ada).
      - `themeMode`: `'light' | 'dark'` (menentukan visualisasi warna aktif).
+     - `colorPackId`: String (ID Color Pack yang saat ini terhubung ke project aktif).
      - `isDirty`: Boolean penanda apakah ada perubahan yang belum tersimpan ke backend.
    - **Actions**:
-     - `loadCanvasState(components: CanvasComponent[])`
+     - `loadCanvasState(components: CanvasComponent[], colorPackId: string)`
+     - `setColorPackId(colorPackId: string)`: Mengubah asosiasi Color Pack pada project.
      - `addComponent(component: CanvasComponent)`
      - `updateComponent(id: string, updates: Partial<CanvasComponent>)`
      - `deleteComponent(id: string)`
      - `setThemeMode(mode: 'light' | 'dark')`
      - `reorderComponent(id: string, action: 'front' | 'forward' | 'backward' | 'back')`
-     - `saveState()`: Melakukan HTTP POST untuk menserialisasi data `components` menjadi JSON untuk disimpan ke database.
+     - `saveState()`: Melakukan HTTP PUT untuk menserialisasi data `components` dan `colorPackId` untuk disimpan ke database.
 
 ---
 
@@ -200,12 +202,13 @@ Komunikasi antara frontend dan backend menggunakan REST API dengan format payloa
       "color_pack_id": "uuid-color-pack-123"
     }
     ```
-* **`GET /api/projects/:id`**: Mengambil detail project lengkap termasuk `canvas_state` (komponen dan tata letak).
-* **`PUT /api/projects/:id`**: Menyimpan/memperbarui state project (termasuk metadata & `canvas_state` penuh).
+* **`GET /api/projects/:id`**: Mengambil detail project lengkap termasuk `canvas_state` (komponen dan tata letak) dan `color_pack_id` yang terikat.
+* **`PUT /api/projects/:id`**: Menyimpan/memperbarui state project (termasuk metadata, `color_pack_id` baru, & `canvas_state` penuh).
   - *Request Body*:
     ```json
     {
       "name": "Project Dashboard Baru (Edited)",
+      "color_pack_id": "uuid-color-pack-456",
       "canvas_state": [
         {
           "id": "comp-1",
